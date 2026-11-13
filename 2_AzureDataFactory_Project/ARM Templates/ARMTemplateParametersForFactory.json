@@ -1,0 +1,66 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "aishdatafactory123"
+		},
+		"2_AzureDataLakeStorage_accountKey": {
+			"value": ""
+		},
+		"Azuredatalake_accountKey": {
+			"value": ""
+		},
+		"2_onpremfile_password": {
+			"value": ""
+		},
+		"AzureDataLakeStorage1_accountKey": {
+			"value": ""
+		},
+		"AzureSqlDatabase1_password": {
+			"value": ""
+		},
+		"p3_AzureDataLakeStorage2_accountKey": {
+			"value": ""
+		},
+		"2_AzureDataLakeStorage_properties_typeProperties_url": {
+			"value": "https://olympicstorageacc.dfs.core.windows.net/"
+		},
+		"AthletesHttpServer_properties_typeProperties_url": {
+			"value": "https://raw.githubusercontent.com"
+		},
+		"Azuredatalake_properties_typeProperties_url": {
+			"value": "https://olympicstorageacc.dfs.core.windows.net/"
+		},
+		"2_onpremfile_properties_typeProperties_host": {
+			"value": "C:\\adfdemo\\"
+		},
+		"2_onpremfile_properties_typeProperties_userId": {
+			"value": "lenovo-chinni\\nihar"
+		},
+		"AzureDataLakeStorage1_properties_typeProperties_url": {
+			"value": "https://p3datalakeolympic.dfs.core.windows.net/"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_server": {
+			"value": "pcsserver2.database.windows.net"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_database": {
+			"value": "pcsdatabase2"
+		},
+		"AzureSqlDatabase1_properties_typeProperties_userName": {
+			"value": "pcsadmin"
+		},
+		"HttpServer2_properties_typeProperties_url": {
+			"value": "https://raw.githubusercontent.com"
+		},
+		"p3_AzureDataLakeStorage2_properties_typeProperties_url": {
+			"value": "https://p3datalakeolympic.dfs.core.windows.net/"
+		},
+		"p3_HttpServerGit_properties_typeProperties_url": {
+			"value": "https://raw.githubusercontent.com/"
+		},
+		"integrationRuntime1_properties_typeProperties_linkedInfo_resourceId": {
+			"value": "/subscriptions/a2a01779-dbf9-4c05-8c91-0423364829ba/resourceGroups/pcs_source/providers/Microsoft.DataFactory/factories/aishwaryapcsdatafactory/integrationRuntimes/integrationRuntime1"
+		}
+	}
+}

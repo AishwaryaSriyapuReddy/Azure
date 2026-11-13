@@ -1,0 +1,421 @@
+PROJECT2
+
+Youtube link:
+By Ansh Lamba
+Azure Data Factory End -To-End Project With Azure DevOps | 2025 Zero To Pro Guide
+https://www.youtube.com/watch?v=Za_9XYwPbKM
+
+
+Architecture:
+
+sources:    ---> Data Fcatory --> Medillian Architecture (bronze, silver, gold) for Data lake
+- on prem
+- sql
+- GitHub
+
+a.) get data from onprem folder/ api / sqlserver and load it into a datalake
+
+
+
+
+a1.) create an self hosted integration runtime for on prem data
+a2.) create linked service for on-prem data as source. (source: filesystem)
+a3.) create storage account in resource group for data lake.
+a4.) create linked service to datalake gen2 as destination
+a5.) Create data migration pipeline from onprem to azuredatalake --> for each, copy activity - with dynamic mapping & dynamic parameterization
+a6.) Create data migration pipeline from API (GitHub) to azuredatalake  using web activity / Copy Activity
+a7.) create azuresqlDB and perform Initial load and incremental loading.
+a8.) Data Orchestration by creating Parent pipeline
+a9.) set notification on status of pipeline run using logic app
+
+
+
+Work we do:
+- we create production ready medallion architecture using only data factory
+- Implement azure devops
+
+
+self - hosted Integration Runtime
+- we install IR on a system, and register it with a key.
+- This IR is self hosted because, the user will manage this IR, not by Azure or by Microsoft because local system resources are managed by you.
+- This IR actually uses local system resources
+- In local machine, the local drives data or hosted drives data (data is in the form of  blobs or files) can be accessed by Azure through IR.
+- Azure will automatically detects IR on the local system based on the Key that the IR has.
+- Use Self hosted IR is used
+	- data is on public network
+	- on prem data
+	- data on private network or organization data
+	- data in local drives
+	- data in hosted drives
+
+
+always create files on drives like c etc not on documents, desktop. It recommended, because it is easy to setup
+
+a2.) create linked service for on-prem data. (source: filesystem)
+
+-check login information, is username password (or) microsoft account username password
+- on prem folder, should have read, write, use permission on the folder
+folder --> right click --> properties --> settings
+- create folder in a drive say C, and paste the files
+
+ERROR:
+while creating linked service for on prem source, data is stored in a drive
+error: unable to access data in 'C:...'
+
+first check folder permissions, as per access perspective.
+whenever, we host self-hosted runtime, it by default enables the file location validation.
+we need to disable it.
+
+(Guys open Windows Powershell in Admin mode, and write this command to change directory :-
+PS C:\Windows\system32> cd "C:\Program Files\Microsoft Integration Runtime\5.0\Shared"                          ---> location of Integration Runtime
+and then once directory gets changed, run the command below-
+
+.\dmgcmd -DisableLocalFolderPathValidation                                                              --> Disable 
+
+Your on-prem file system linked service will start working, and will not throw any error.)
+
+
+a3.) create storage account in resource group for data lake.
+
+
+interviewrs are more inclined towards files, drives, restricted drives than sql server. sql server is being done for past 10 years, for files we create job agent on top of it, currently in demand.
+
+
+create containers in storage account:
+	- bronzedata2 (contains raw data)
+
+a4.) create linked service to datalake gen2 as destination
+a5.) Create data migration pipeline
+--> copy activity
+give source - filesystem, format csv
+	    - create dynamic: file name (dataset)
+give sink - datalakegen2(bronze), format: csv  --> browse: if file name is given, data is stored under that filename, if not source filename is used by default
+	
+parquet files - holds the schema of the data within the file, while csv does hold the schema.
+
+whenever you want to transform the source data into parquet/ORC, we need to have Java Runtime Environment.
+This installations will all be done by networking team/ admin for us.
+
+--> for each activity
+name: foreachFile
+parameter: files of array type (iterator through files)
+	value: list of dictories --> pass of array of dictionary for multiple varaibles
+	       list of values  --> pass of array for single varaible
+
+assign this value to file variables in parameters
+[{"file_name":"DimPassenger.csv"},{"file_name":"DimAirline.csv"},{"file_name":"DimFlight.csv"}]
+
+In for each copy activity,
+	source, sink: filename dynamic value - @item.filename (keyname)
+
+
+keep mapping for each activity: use dynamic mapping
+	create a parameter, you just copy the data, based on each file name you simply pass specific mapping.
+If you are copying multiple files, then you avoid this practise, because you just dump the raw data in bronze layer and you do not perform schema validation in bronze layer. Schema validation is done in silver/enrinched layer.
+
+In exception case, you want to keep dynamic mapping at bronze layer as data is really really sensitive or critical and you cannot afford to break anything.
+then you create parameters:
+	p_mapping_flight - type: object
+	p_mapping_passenger - type: object
+	p_mapping_airline - type: object
+
+go into, for each --> take copy activity as independent identity, to get value of the mapping parameters and test indiviually
+	- in source and sink in piepline, remove dynamic content, give DimPassenger.csv
+	- go to mapping section --> import schema --> you get mappings --> to get code of the mappings: click on  </> on copy activity --> copy the dictionary of translator --> go to mapping section, add dynamic content: paste code in @JSON('<PASTE HERE>')--> test: validate, debug -->successful then use this code in parameters of that file --> ok
+
+Do this for each mapping parameter.
+
+In parameter,
+if mapping parameter is Object Type, then Value: without JSON
+if mapping parameter is String Type, then value: with JSON
+
+
+After populating all mapping parameters,
+put copy activity, inside for each:
+- define iterator parameter in parameters, files
+- (how to pass mapping parameter i  for loop) go to mapping section in copy activity --> dynamic content, write if code:
+	@if(equals(item().file_name,'DimPassenger.csv'),pipeline().parameters.p_mapping_passenger,
+if(equals(item().file_name,'DimAirline.csv'),pipeline().parameters.p_mapping_airline,pipeline().parameters.p_mapping_flight))
+
+
+
+
+I got error:
+Implemented dynamic mapping and dynamic parameterization got this error { "code": "BadRequest", "message": null, "target": "pipeline//runid/ced25c06-2b14-44e8-a50b-a94b73df56ae", "details": null, "error": null }
+
+but detailed error details was shown here and also not found in monitor section in ADF.
+To see error detail, pipeline --> trigger --> trigger now (shows error in details) 
+
+
+a6.) Create data migration pipeline from API call (GitHub) to azuredatalake  using web activity
+
+webactivity ----connected/orchestrated --> Copy activity
+
+you can import airport.json from GitHub using Copy Activity and Web activity
+
+using Web activity, using which you can perform API call.
+
+GitHub --> dataset --> click raw --> copy raw url (if not showing, convert given url into raw url in chatgpt) --> 2 implementations
+	(using web activity: activity --> web activity --> url: paste raw url --> method: GET --> authentication: None(public repo) --> intergration runtime: auto  --> ok --> publish --> validate --> debug --> see the output in output section (the output you get is web output, not like in .json file)) 
+ 
+	(using copy activity -->source --> dataset --> new --> http (used to send a request to a server)--> json --> dataset name --> linked service -->new --> IR: auto --> base url and relative url (get from raw url from chatgpt) --> server certificate validation: enable --> authentication: anonymous --> create --> relative url --> import schema : none --> ok --> preview data --> sink --> new -->azuredatalakegen2 --> json --> name --> linkedservice --> filepath:bronze/GitHub/DimAirport.json --> import schema: none --> ok --> mapping --> import schema -->check the schema  --> ok
+we can transform json file into csv, parquet or ORC easily, but we do not it here. We we will learn to try to transform JSON object.
+
+here in web activity, we need not get the response, as we have data directly in GitHub.
+we use self hosted IR, only for private network and on-prem.
+		
+when to use web activity and copy activity to get data from  api?
+| Requirement                       | Activity      |
+| --------------------------------- | ------------- |
+| Copy API data to storage/database | Copy Activity |
+| Trigger an API action             | Web Activity  |
+| Get OAuth token                   | Web Activity  |
+| Read large datasets from REST API | Copy Activity |
+| Handle pagination automatically   | Copy Activity |
+| Call a webhook/service endpoint   | Web Activity  |
+
+Use Copy Activity when the goal is to extract data from a REST API and load it into a target store such as ADLS, Blob Storage, or SQL Database. Use Web Activity when you need to invoke an API for an action, such as obtaining an access token, triggering a process, calling a webhook, or interacting with a service where data movement is not the primary objective.
+
+
+Web Activity returns whatever the API sends. Most modern REST APIs return JSON, which ADF exposes in the output.body property. If the API returns XML or plain text, ADF stores it as a string in the response body. Web Activity is best for control-flow operations and small responses, while Copy Activity is preferred for ingesting large volumes of API data.
+
+
+a7.) create azure sql DB and perform incremental loading
+
+create --> Azure SQL --> SQL databases --> resource group --> database name --> server(if not present, create one) -->server name --> region --> select use both SQL and Microsoft entra authentication -->click set admin and select your user --> server admin login -->password -->ok --> elastic pools: NO -->workload environment: development --> configure database: configure , serverless, maxcores-1 --> data max size: 1gb --> LRS -->Networking: connectivity method: public endpoint --> firewall rules: yes- allow azure services and resources to access this server, yes - add current client IP address --> review+create --> create
+
+SQL databases - to create new sql databases
+SQL managed instances - data is on prem sql databases, you want to do lift and shift
+SQL virtual machines - used lift and shift data, here 99% administration is done by you and only 1% is done by Azure. You want to configure OS level access.
+
+
+go to sql database --> query editor --> login --> create factbookings and insert data till 936 records initially (copy code from GitHub)--> run the query 
+
+Now we incrementally load the data,
+	adf --> pipeline: name- azuresqltodatalake -->activity: copy activity -->general: name-CopySQLdataset --> source: azuresqldatabase -->linkedservice --> new --> name: azuresql --> from azure subscription --> servername --> database name --> authentication: sql --> username --> password -->test connection --> create --> do not select table --> import schema: none --> ok --> use Query: Query (for incremental loading of data)--> query(to read incremental data that we read for loading): select * from FactBooking -->preview data --> you see data, thenit is working fine
+
+After initial load, afterwards, we just load new data, for that, 
+	we need something called timestamp (we note max timestamp, data>maxtimestamp):
+
+		goto to bronze2 container --> create directory : monitor (for watermarking techniques)--> here we create empty json folder and lastload folder --> go to desktop --> create emptyjason file or download from github -->inside emptyjson folder in monitor folder, upload empty.json in emptyjson folder  --> In lastload folder, create a lastload.json (no data present) file or rename empty.json on uploading.
+
+		use set variable activity and disable copy activity for now --> variables: name:v_now(value of current timestamp) --> click on set variable --> variable type: pipeline variable -->name:v_now --> value: dynamic content - @utcNow() --> ok --> validate --> debug --> set varaible output ( copy value and store the timestamp in lastload.json file in lastloadfolder) lastload.json - edit -->{"lastload","<paste the copied timestamp>"} and change last date to 1900-01-01 ({"lastload":"1900-01-01T10:59:17.3445333Z"})
+
+In pipeline --> delete set varaible activity --> activate copy activity --> goto source --> query --> change query to, select * from FactBookings where booking_date>'1900-01-01' (this query is equalveat to select * from dbo.factbookings, as data for 1900-01-01  is not present)--> ok --> preview data (you see all the data - initial load)
+
+I want to make this '1900-01-01' dynamic and not hardcode it,
+
+Use lookup activity, you view content of the lastloadfile
+--> use lookup activity in pipeline (lookup data and return content of the file in datalake) -->name: Lastload( lookup for last load file) --> check first row only --> source dataset: new -->azure datalake --> json --> name: ds_lookup_lastload --> linkedservice: azuredatalake --> path: bronze2/montior/lastload/lastload.json --> import schema: none --> ok -->deactivate copy activity --> validate --> debug --> check output 
+
+pass output of lookuplastload activity to copy activity:
+connect lookup activity with copy activity --> goto copy activity --> query: dynamic: select * from dbo.FactBookings where booking_date > '<selectlastloadfirstrow>' (e.g. '@{activity('lASTlOAD').output.firstRow.lastload}') (remove @ beside select and add @, {}, add column name near activity) (adding @ and  {}, to treat it as variable else it treats activity as string) --> ok --> activate copy activity --> preview --> timestamp to check (this basically we give at runtime)
+
+(select * from dbo.FactBookings where booking_date>'@{activity('LookupLastLoadfile').output.firstRow.lastload}') ---> Initial Ingestion is performed
+
+Now, we do Incremental Ingestion: we want to fetch maximum value of the table, we are ingesting the data.
+use another lookup activity --> name: latest load --> settings -->sourcedataset: sqlsource -->select first row only -->use query: select query --> query: dynamic - select max(booking_date) as latestload from dbo.FactBookings --> select firstrow --> deactivate copy activity --> validate --> debug
+
+lastload - is the timestamp, when we last loaded the data.
+
+connect lastload and latestload lookup activities to copy activity.
+
+go to copy activity --> source --> query: dynamic - 
+select * from dbo.FactBookings where booking_date > '<selectlastloadfirstrow>' (e.g. '@{activity('lASTlOAD').output.firstRow.lastload}') and
+booking_date <= <latestloadfirst row>.latestload --> ok --> in preview data, give latestload value (from output), if you see preview data, then it is working fine.
+
+(select * from dbo.FactBookings where booking_date>'@{activity('LookupLastLoadfile').output.firstRow.lastload}' and booking_date<= '@{activity('LookupLatestload').output.firstRow.latestload}')
+
+
+In copy activity, sink --> new --> azuredatalakegen2 --> parquet --> name: ds_sql --> linked service: datalake --> filepath: bronze2/sql/(no file name) (no file name because, we incrementally load data, if file name is given, it will replace the file) --> import schema: none
+
+-- Watermark copy activity
+use another copy activity --> name: Watermark --> source --> new --> name: ds_emptyjson (creating empty dataset) --> linkedservice: datalake --> path: bronz2/monitor/emptyjson/emty.json  --> none --> ok--> connect copy activity to watermark(copy) activity --> click on watermark activity --> source--> additional columns--> + --> name: lastload, value: add dynamic content (in drop down) , value:latestloadfirstrow  (everytime we copy the data, it will perform the watermark which will copy the data from empty json into the populated json and that populated json will be replaced with latest load timestamp) --> sink: ds_lookup  (lastload.json, the file is getting replaced) --> validate --> debug --> output --> googles icon (to see details)(sql database to azuredatalake data is compressed, so end up paying less compared to databases, you see rows read, data read) 
+
+(everytime, copy data is done, we also copy data from emptyjson to lastload.json and  lastload file data is replaced with latestload timestamp)
+
+testing:
+- initial load
+- run pipeline, without adding new data, making sure no data is loaded again   (no data is loaded, but it creates empty parquet file in datalake, that is in bytes)
+- add new data, check incremental loading
+	load data from the previous lastload date 
+
+--> pipeline working correctly --> then publish the pipeline.
+
+a8.) Data Orchestration by creating Parent pipeline
+
+pipline --> new --> activity: executepipeline --> name: Parent pipeline --> name: ExecuteOnPremPipeline -->settings: invoke pipeline: onprem ingestion --> check wait on completion --> parameters (you have given parameters at pipeline level before, now you have give those from here as well) (you do not provide value directly to value, as it sometimes breaks the pipeline-it depends on the datatype, The best practice is create parameters at parent pipeline level and bypass those parameters in child pipelines) 
+now add all parameters in onprem pipeline in parentpipeline, make sure datatypes and values are same --> In execute pipeline -->settings --> parameters -->add dynamic content --> ok
+
+
+new executepipeline --> do same for API pipeline
+new executepipeline --> do same for sqlingestionintial_incre_load pipeline
+
+connect all 3 execute pipelines
+
+
+a9.) set notification on status of pipeline run using logic app
+logic app - a web application, one use case is it receives http request
+send api request to logic app --> logic perform action send mail or any other action
+
+adf calls logic app on failure of pipeline, then logic app triggers action to send the email.
+
+create logic app:
+resource group --> create --> logic app --> workflow service plan --> name: --> region --> pricing plan  (standard ws1) -->zone redundancy : disabled --> storage accoiunt --> dont configure diagnostic setting now --> enable public access --> create
+
+logic app --> workflows --> create --> name:pcs2 --> stateful --> create --> open workflow 
+
+trigger --> request -->
+
+post request: you have to send something in the body
+request json body 
+{
+  "pipeline_name": "blabla",
+  "run_id":"blabla",
+  "status": "blabla",
+  "error":"blabla"
+}
+--> done --> save --> http url is generated 
+-->+ --> add action --> office 365 outlook --> send email --> sign in --> give To, subject, body (also give dynamic contents at any sections) and save
+
+
+go to parent pipeline, in architecture, add web activity:
+ expipeline1 --> expipeline2 --> expipeline3 --> web activity
+
+in web activity --> url: paste logicapp http url --> method: post --> body:
+{"pipeline_name":"@{<system variables:pipelinename>}"
+"run_id:
+"status": activity outputs (executeincremnetal).status
+"error":activity outputs (executeincremnetal).error
+}
+
+({"pipeline_name":"@{pipeline().Pipeline}",
+"run_id":"@{pipeline().RunId}",
+"status":"@{activity('ExecuteOnPremPipeline').Status}",
+"error":"@{activity('ExecuteOnPremPipeline').output.error}"
+})
+
+use error[0].message, only if the pipeline fails
+
+--> authentication: none
+
+variables must match, and make them dynamic from system variables and activity output
+
+
+when you run pipeline, if failed web activity triggers.
+
+if the pipeline is running successfully, then the bronze layer is completed.
+
+
+----------Silver Layer
+here we do transformation on bronze layer data.
+
+ADF --> Author --> Dataflow --> new dataflow --> name: DataTransformation2 -->
+
+
+---------------------------GOLD LAYER
+here, we use business views using dataflow to populate gold layer.
+
+views
+which airline is performing well interms of revenue?
+
+
+
+there is no parent child pipeline, it is master child pipeline, because we had data from different sources
+
+
+
+Interview:
+I have created a Datafactory project, and implemented medalian architecture in datafactory, where we have airline that was from different sources say the API, on-prem and azuresqldb and also implemented initial and incremental loading in azuresqldb to dalalake for data refreshment for scheduled  intervals. I have also implemented master child pipeline, as data is sourced/imported from different sources. Once all the raw data is landed in bronze layer. Then we created transformation pipelines and business analysis pipelines in silver and gold layer and orchestrated(manage and coordinate) the workflow/pipelines for datamovement.
+
+refined answer:
+
+I created a Data Factory project and implemented the Medallion Architecture (Bronze, Silver, and Gold layers). The airline data was sourced from multiple systems, including APIs, on-premises sources, and Azure SQL Database. I implemented both initial and incremental loading from Azure SQL Database to Azure Data Lake Storage to support scheduled data refreshes.
+
+I also implemented a master-child pipeline architecture, as data was being ingested from different source systems. Once the raw data was landed in the Bronze layer, I developed transformation pipelines for the Silver layer and business transformation/curated data /analytics /reporting pipelines for the Gold layer. Additionally, I orchestrated and managed the workflows to ensure seamless data movement and processing across all layers.
+
+Additional questions:
+--> what additional features you have implemented?
+- Implemented initial and incremental data loading between Azure SQL Database and Azure Data Lake Storage, enabling efficient data refreshes and minimizing unnecessary data movement.
+- Configured email notifications and alerting mechanisms for pipeline execution status (failures, successes, and exceptions) using Azure Logic Apps and Azure Data Factory Web Activities, improving monitoring and operational support.
+- Integrated Azure DevOps CI/CD processes by managing code through feature and main branches, facilitating controlled code promotion through pull requests and approvals.
+- Published (generates ARM templates) Azure Data Factory artifacts(Pipelines, Datasets, Linked Services, Data Flows, Triggers, Integration Runtimes (references/configurations)
+Global Parameters) to the ADF repository in adf_publish branch, enabling seamless deployment to higher environments (QA and Production) through Azure DevOps release pipelines.
+- Implemented parameterization and reusable pipeline components to improve maintainability and reduce development effort.
+- Configured scheduling and dependency management for end-to-end workflow orchestration across Bronze, Silver, and Gold layers.
+- Developed logging and monitoring practices to track pipeline executions and support troubleshooting.
+
+--> What kind of transformations are done in silver layer?
+--> what analysis did you perform in gold layer?
+--> what are different activities you have used in different pipelines and why?
+
+-->how do you use multithreads and how do you use parallelism in pyspark?
+
+In PySpark, parallelism is achieved through distributed processing across cluster executors, where data is divided into partitions and processed in parallel using Spark’s DAG scheduler and task execution model. We control parallelism using partitions, repartition, and shuffle operations. Python multithreading, on the other hand, runs only on the driver node and is mainly used for I/O-bound operations like API calls or file handling, since it does not provide true distributed parallelism due to Python’s GIL. Therefore, Spark parallelism is used for large-scale data processing, while multithreading is used for auxiliary non-distributed tasks.
+
+In PySpark, parallelism is achieved through distributed processing across cluster executors, where data is divided into partitions and processed in parallel using Spark’s DAG scheduler and task execution model. We control parallelism using partitions, repartition, and shuffle operations. Python multithreading, on the other hand, runs only on the driver node and is mainly used for I/O-bound operations like API calls or file handling, since it does not provide true distributed parallelism due to Python’s GIL. Therefore, Spark parallelism is used for large-scale data processing, while multithreading is used for auxiliary non-distributed tasks.
+
+
+-->9.	What is broadcast in Spark? Why is broadcast more efficient? When did you use broadcast?
+Broadcast in Spark is a mechanism to send a small dataset to all worker nodes (executors) so that it is locally available during joins or computations, instead of shuffling large data across the network.
+
+✔ Avoids shuffle phase (most expensive part of Spark)
+✔ Reduces network I/O
+✔ Reduces disk spill
+✔ Local in-memory join
+
+When should you use Broadcast?
+✔ Best scenarios:
+Small dimension tables
+Lookup/reference tables
+Code tables (country, region, status)
+Less than ~10–100 MB (rule of thumb)
+
+--> 10.	What is Managed Identity and how did you use it?
+Managed Identity is an Azure Active Directory feature that provides an automatically managed identity for Azure resources, allowing them to securely access other Azure services without storing credentials such as client secrets. In my projects, I have used Managed Identity in Azure Data Factory to securely access ADLS Gen2 and Azure Key Vault, eliminating the need for hardcoded secrets and improving security and maintainability of ETL pipelines.
+
+
+Managed Identity is an Azure feature that provides an automatically managed identity in Microsoft Entra ID (Azure AD) for an Azure service, so it can securely access other Azure resources without storing credentials like passwords or client secrets.
+
+✔ No secrets stored in code
+✔ No password rotation needed
+✔ More secure (Azure handles authentication)
+✔ Reduces risk of credential leakage
+✔ Easy integration with Azure services
+
+
+Databricks → ADLS access
+
+Used Managed Identity to:
+
+Read raw data from ADLS
+Write transformed Delta tables
+
+
+Scenario 3: ADF → Azure Key Vault
+
+Used Managed Identity to:
+
+Fetch secrets from Key Vault securely
+Avoid storing credentials in pipeline
+
+--> 11. What is service principal?
+A Service Principal is an identity created in Microsoft Entra ID (Azure AD) that represents an application or service, allowing it to securely access Azure resources using credentials like a client ID and secret or certificate
+
+--> 12. Do you use APIs in your project and what was that?
+Yes, APIs were used as a source system in my project to ingest data from external and internal systems into Azure Data Lake. Azure Data Factory was used with REST connectors to extract data from APIs such as GitHub and other third-party SaaS applications. The data was ingested in JSON format into ADLS Gen2 raw layer, then processed using Databricks and made available for analytics in Synapse. We handled challenges like pagination, authentication using OAuth or API keys, and rate limiting using retry policies and incremental extraction strategies.
+
+--> 13. Name some reasons your ADF pipeline failed during execution?
+ADF pipeline failures typically occur due to connectivity issues, authentication problems, schema mismatches, file availability issues, Integration Runtime failures, transformation errors, and sink-side constraints. In production scenarios, most failures are caused by expired credentials, missing files in ADLS, or schema changes in source systems. These are mitigated using retry policies, monitoring, Key Vault integration, and robust schema handling strategies.
+
+-->14. Have you faced any issues on time efficiency and memory utilization when you’re doing a parallel processing task? Such as data skews?
+
+-->15. difference between direct query mode and direct lake mode?
+
+-->16.What are approaches for you to save the execution time and optimize the performance? 
+Performance optimization = reduce data scanned + reduce shuffle + improve parallelism + efficient compute usage
+-Filter early - Reduces data scanned
+
+
+CRISP INFORMATIVE PRECISE answer
+
