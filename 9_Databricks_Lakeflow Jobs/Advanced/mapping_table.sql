@@ -1,0 +1,1 @@
+select * from db_jobs.default.mapping_table;
