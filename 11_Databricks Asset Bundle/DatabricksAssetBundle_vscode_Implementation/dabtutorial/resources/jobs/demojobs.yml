@@ -1,0 +1,17 @@
+resources:
+  jobs:
+    DemoJob:
+      name: DemoJob
+      tasks:
+        - task_key: Ingestion
+          notebook_task:
+            notebook_path: ../../src/dabtutorial_etl/transformations/notebook/notebook.ipynb
+            source: WORKSPACE
+          environment_key: Default
+      queue:
+        enabled: true
+      environments:
+        - environment_key: Default
+          spec:
+            environment_version: "5"
+      performance_target: PERFORMANCE_OPTIMIZED
